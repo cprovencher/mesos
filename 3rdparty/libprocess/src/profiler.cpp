@@ -10,7 +10,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License
 
+#include <stdio.h>
 #include <string>
+#include <unistd.h>
 
 #include <glog/logging.h>
 
@@ -40,9 +42,9 @@ const std::string Profiler::START_HELP()
 {
   return HELP(
     TLDR(
-        "Start profiling."),
+        "Starts profiling."),
     DESCRIPTION(
-        "Start to use google perftools do profiling."),
+        "Starts profiling the current process by using 'perf record'."),
     AUTHENTICATION(true));
 }
 
@@ -53,10 +55,9 @@ const std::string Profiler::STOP_HELP()
     TLDR(
         "Stops profiling."),
     DESCRIPTION(
-        "Stop to use google perftools do profiling."),
+        "Stops perf recording and returns perf.data."),
     AUTHENTICATION(true));
 }
-
 
 Future<http::Response> Profiler::start(
     const http::Request& request,
@@ -78,14 +79,12 @@ Future<http::Response> Profiler::start(
 
   LOG(INFO) << "Starting Profiler";
 
-  // WARNING: If using libunwind < 1.0.1, profiling should not be used, as
-  // there are reports of crashes.
-  // WARNING: If using libunwind 1.0.1, profiling should not be turned on
-  // when it's possible for new threads to be created.
-  // This may cause a deadlock. The workaround used in libprocess is described
-  // here:
-  // https://groups.google.com/d/topic/google-perftools/Df10Uy4Djrg/discussion
-  // NOTE: We have not tested this with libunwind > 1.0.1.
+  // get frequency from parameter in http request, default to 49 otherwise
+  string frequency = "49";
+  string pid = std::to_string(getpid());
+  // don't use popen here, find another implementation that allows to kill it
+  FILE* pipe = popen("perf record -a -p " + pid + " -F " + frequency, "r");
+
   if (!ProfilerStart(PROFILE_FILE)) {
     Try<std::string> error =
       strings::format("Failed to start profiler: %s", os::strerror(errno));
@@ -114,6 +113,8 @@ Future<http::Response> Profiler::stop(
 
   LOG(INFO) << "Stopping Profiler";
 
+  // kill process started higher
+  // return perf.data in http response by runnign perf script
   ProfilerStop();
 
   http::OK response;
